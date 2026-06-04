@@ -1,0 +1,21 @@
+{
+  "name": "chat-runtime",
+  "version": "0.0.0",
+  "private": false,
+  "description": "VPS website_chat runtime — stateless Hono service. Deployable to Vercel (serverless, src/server.ts) or any container host (src/index.ts). Generated from voice-prompt-studio/apps/chat-runtime.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.81",
+    "@ai-sdk/google": "^3.0.80",
+    "@ai-sdk/openai": "^3.0.67",
+    "@hono/node-server": "^1.13.7",
+    "ai": "^6.0.193",
+    "hono": "^4.6.14",
+    "lru-cache": "^11.3.5",
+    "tsx": "^4.20.0"
+  }
+}
