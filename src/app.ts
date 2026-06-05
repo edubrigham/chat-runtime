@@ -189,3 +189,7 @@ export function createAppFromEnv(env: { vpsBaseUrl: string; runtimeSecret: strin
   const vps = createVpsClient({ baseUrl: env.vpsBaseUrl, runtimeSecret: env.runtimeSecret })
   return createApp({ vps })
 }
+
+// --- Vercel zero-config entry (generated; src/app.* is the highest-priority probed location) ---
+import { loadEnv as __vpsLoadEnv } from './config.js'
+export default createAppFromEnv(__vpsLoadEnv())
