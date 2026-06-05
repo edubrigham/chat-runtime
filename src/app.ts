@@ -72,8 +72,12 @@ export function createApp(deps: AppDeps): Hono {
         return c.json({ error: err instanceof Error ? err.message : 'config fetch failed' }, 502)
       }
 
+      // Origin gate (deny-by-default once an allowlist exists). A MISSING Origin must be
+      // rejected too — otherwise a non-browser client (curl/server-side) bypasses the
+      // allowlist by simply omitting the header. (Empty allowlist stays permissive until
+      // the deploy surface writes origins — see #2/config FOLLOW-UP.)
       const allowed = snapshot.allowedOrigins ?? []
-      if (allowed.length > 0 && origin && !isOriginAllowed(origin, allowed)) {
+      if (allowed.length > 0 && (!origin || !isOriginAllowed(origin, allowed))) {
         return c.json(
           { error: 'origin not allowed' },
           403,
