@@ -116,4 +116,10 @@ export interface DeploymentConfigResponse {
   runtimeTarget: RuntimeTarget
   compiledConfigVersion: number
   config: ChannelRuntimeConfig
+  /**
+   * Browser-widget origin allowlist. Only the PUBLIC config endpoint
+   * (`/api/runtime/public-deployments/[publicId]/config`) sets this; the internal
+   * `/api/runtime/deployments/[id]/config` route omits it.
+   */
+  allowedOrigins?: string[]
 }

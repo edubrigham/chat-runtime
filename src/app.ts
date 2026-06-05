@@ -9,10 +9,11 @@
 
 import { Hono } from 'hono'
 import { streamText, stepCountIs, type ModelMessage } from 'ai'
-import { createVpsClient, type VpsClient } from './agent-core'
+import { createVpsClient, type VpsClient, type DeploymentConfigResponse } from './agent-core'
 import { createChatModel } from './model'
 import { buildTools } from './tools'
 import { flushDurable } from './ingest'
+import { corsHeadersForOrigin, isOriginAllowed } from './origin'
 
 function asText(content: ModelMessage['content']): string {
   return typeof content === 'string' ? content : JSON.stringify(content)
@@ -24,6 +25,8 @@ export interface AppDeps {
 
 interface ChatRequestBody {
   deploymentId?: string
+  /** Browser-widget path: resolves to the internal id server-side; never the internal id. */
+  publicDeploymentId?: string
   conversationId?: string
   messages?: ModelMessage[]
 }
@@ -33,6 +36,15 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get('/health', (c) => c.json({ ok: true, service: 'chat-runtime' }))
 
+  // Browser preflight for the public widget path. Always 204 + reflected CORS.
+  app.options('/chat', (c) => {
+    const origin = c.req.header('origin')
+    return new Response(null, {
+      status: 204,
+      headers: origin ? corsHeadersForOrigin(origin) : {},
+    })
+  })
+
   app.post('/chat', async (c) => {
     let body: ChatRequestBody
     try {
@@ -41,34 +53,68 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: 'invalid JSON body' }, 400)
     }
 
-    const { deploymentId, messages } = body
-    if (!deploymentId || !Array.isArray(messages) || messages.length === 0) {
-      return c.json({ error: 'deploymentId and a non-empty messages[] are required' }, 400)
+    const { deploymentId, publicDeploymentId, messages } = body
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return c.json({ error: 'a non-empty messages[] is required' }, 400)
     }
 
-    // Pinned snapshot (cached + ETag-revalidated) — chat_runtime/text only.
-    let snapshot
-    try {
-      snapshot = await deps.vps.getDeploymentConfig(deploymentId)
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'config fetch failed' }, 502)
+    // The PUBLIC (browser-widget) path is keyed by the safe public id and is Origin-
+    // allowlisted; its responses carry CORS so the browser can read the stream. The internal
+    // path is unchanged (server-to-server, no CORS). `cors` is set only on the public path.
+    const origin = c.req.header('origin')
+    let snapshot: DeploymentConfigResponse
+    let cors: Record<string, string> | undefined
+
+    if (publicDeploymentId) {
+      try {
+        snapshot = await deps.vps.getPublicDeploymentConfig(publicDeploymentId)
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : 'config fetch failed' }, 502)
+      }
+
+      const allowed = snapshot.allowedOrigins ?? []
+      if (allowed.length > 0 && origin && !isOriginAllowed(origin, allowed)) {
+        return c.json(
+          { error: 'origin not allowed' },
+          403,
+          origin ? corsHeadersForOrigin(origin) : undefined,
+        )
+      }
+      cors = origin ? corsHeadersForOrigin(origin) : undefined
+    } else if (deploymentId) {
+      // Pinned snapshot (cached + ETag-revalidated) — chat_runtime/text only.
+      try {
+        snapshot = await deps.vps.getDeploymentConfig(deploymentId)
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : 'config fetch failed' }, 502)
+      }
+    } else {
+      return c.json({ error: 'deploymentId or publicDeploymentId is required' }, 400)
     }
+
+    // Downstream calls (credentials, tools) always key on the INTERNAL id from the resolved
+    // snapshot — for the public path this is the resolved id, never the public id.
+    const effectiveDeploymentId = snapshot.deploymentId
 
     const session = snapshot.config.session
     if (session.kind !== 'text') {
-      return c.json({ error: `unsupported channel session: ${session.kind}` }, 400)
+      return c.json({ error: `unsupported channel session: ${session.kind}` }, 400, cors)
     }
 
     // Per-project LLM key (Option A): runtime calls the provider directly.
     let creds
     try {
-      creds = await deps.vps.getLlmCredentials(deploymentId, session.model)
+      creds = await deps.vps.getLlmCredentials(effectiveDeploymentId, session.model)
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'credentials failed' }, 502)
+      return c.json({ error: err instanceof Error ? err.message : 'credentials failed' }, 502, cors)
     }
     if (!creds.apiKey) {
       // Azure / non-key providers not wired yet (key-based providers only for now).
-      return c.json({ error: 'no usable LLM key for this model (Azure not supported yet)' }, 501)
+      return c.json(
+        { error: 'no usable LLM key for this model (Azure not supported yet)' },
+        501,
+        cors,
+      )
     }
 
     const conversationId = body.conversationId || crypto.randomUUID()
@@ -87,7 +133,7 @@ export function createApp(deps: AppDeps): Hono {
       if (lastUser) {
         try {
           const k = await deps.vps.retrieveKnowledge(
-            deploymentId,
+            effectiveDeploymentId,
             asText(lastUser.content),
             agentCore.boundKnowledgeIds,
           )
@@ -101,7 +147,9 @@ export function createApp(deps: AppDeps): Hono {
     // Tools stay bound to their flow steps and are called interactively (the model invokes
     // them as the in-prompt flow reaches that step). Multi-step loop, capped.
     const tools =
-      agentCore.tools.length > 0 ? buildTools(deploymentId, agentCore.tools, deps.vps) : undefined
+      agentCore.tools.length > 0
+        ? buildTools(effectiveDeploymentId, agentCore.tools, deps.vps)
+        : undefined
 
     const result = streamText({
       model: createChatModel(creds),
@@ -124,7 +172,9 @@ export function createApp(deps: AppDeps): Hono {
       },
     })
 
-    return result.toTextStreamResponse()
+    // CORS (public path only) is attached to the streamed Response via ResponseInit so the
+    // browser can read the body cross-origin. The internal path passes no headers (undefined).
+    return result.toTextStreamResponse(cors ? { headers: cors } : undefined)
   })
 
   return app

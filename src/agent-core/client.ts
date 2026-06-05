@@ -33,6 +33,12 @@ interface CachedConfig {
 
 export interface VpsClient {
   getDeploymentConfig(deploymentId: string): Promise<DeploymentConfigResponse>
+  /**
+   * PUBLIC config fetch keyed by the safe `public_deployment_id` (never the internal id).
+   * Mirrors `getDeploymentConfig` (same Bearer secret + ETag/304 cache) but hits the
+   * public route, whose body also carries `allowedOrigins` for browser CORS.
+   */
+  getPublicDeploymentConfig(publicId: string): Promise<DeploymentConfigResponse>
   getLlmCredentials(deploymentId: string, model?: string): Promise<LlmCredentials>
   executeTool(
     deploymentId: string,
@@ -78,6 +84,36 @@ export function createVpsClient(opts: VpsClientOptions): VpsClient {
 
     const response = (await res.json()) as DeploymentConfigResponse
     configCache.set(deploymentId, { etag: res.headers.get('etag'), response })
+    return response
+  }
+
+  // PUBLIC config mirror — separate LRU entry (keyed by public id, NOT the internal id), so
+  // the public + internal caches never collide. Same Bearer secret + ETag/304 revalidation.
+  const publicConfigCache = new LRUCache<string, CachedConfig>({
+    max: 500,
+    ttl: opts.configTtlMs ?? 60_000,
+  })
+
+  async function getPublicDeploymentConfig(publicId: string): Promise<DeploymentConfigResponse> {
+    const cached = publicConfigCache.get(publicId)
+    const headers: Record<string, string> = { Authorization: authHeader }
+    if (cached?.etag) headers['If-None-Match'] = cached.etag
+
+    const res = await fetchFn(`${base}/api/runtime/public-deployments/${publicId}/config`, {
+      headers,
+    })
+
+    if (res.status === 304 && cached) return cached.response
+    if (res.status === 401)
+      throw new Error('runtime config: unauthorized (check RUNTIME_CONFIG_SECRET)')
+    if (res.status === 404)
+      throw new Error(
+        `runtime config: public deployment ${publicId} not found or not a published chat_runtime`,
+      )
+    if (!res.ok) throw new Error(`runtime config: unexpected status ${res.status}`)
+
+    const response = (await res.json()) as DeploymentConfigResponse
+    publicConfigCache.set(publicId, { etag: res.headers.get('etag'), response })
     return response
   }
 
@@ -159,6 +195,7 @@ export function createVpsClient(opts: VpsClientOptions): VpsClient {
 
   return {
     getDeploymentConfig,
+    getPublicDeploymentConfig,
     getLlmCredentials,
     executeTool,
     retrieveKnowledge,
