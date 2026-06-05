@@ -8,5 +8,5 @@
 
 export const AGENT_CORE_VERSION = '0.0.0'
 
-export * from './types'
-export { createVpsClient, type VpsClient, type VpsClientOptions } from './client'
+export * from './types.js'
+export { createVpsClient, type VpsClient, type VpsClientOptions } from './client.js'

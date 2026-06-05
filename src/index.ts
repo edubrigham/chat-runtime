@@ -5,8 +5,8 @@
  */
 
 import { serve } from '@hono/node-server'
-import { loadEnv } from './config'
-import { createAppFromEnv } from './app'
+import { loadEnv } from './config.js'
+import { createAppFromEnv } from './app.js'
 
 const env = loadEnv()
 const app = createAppFromEnv(env)

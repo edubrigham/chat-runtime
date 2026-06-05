@@ -9,7 +9,7 @@
  */
 
 import type { ModelMessage } from 'ai'
-import type { DeploymentConfigResponse, VpsClient } from './agent-core'
+import type { DeploymentConfigResponse, VpsClient } from './agent-core/index.js'
 
 export interface FlushArgs {
   vps: VpsClient

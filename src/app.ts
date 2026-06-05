@@ -9,11 +9,11 @@
 
 import { Hono } from 'hono'
 import { streamText, stepCountIs, type ModelMessage } from 'ai'
-import { createVpsClient, type VpsClient, type DeploymentConfigResponse } from './agent-core'
-import { createChatModel } from './model'
-import { buildTools } from './tools'
-import { flushDurable } from './ingest'
-import { corsHeadersForOrigin, isOriginAllowed } from './origin'
+import { createVpsClient, type VpsClient, type DeploymentConfigResponse } from './agent-core/index.js'
+import { createChatModel } from './model.js'
+import { buildTools } from './tools.js'
+import { flushDurable } from './ingest.js'
+import { corsHeadersForOrigin, isOriginAllowed } from './origin.js'
 
 function asText(content: ModelMessage['content']): string {
   return typeof content === 'string' ? content : JSON.stringify(content)

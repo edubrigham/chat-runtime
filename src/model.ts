@@ -11,7 +11,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import type { LanguageModel } from 'ai'
-import type { LlmCredentials } from './agent-core'
+import type { LlmCredentials } from './agent-core/index.js'
 
 export function createChatModel(creds: LlmCredentials): LanguageModel {
   if (!creds.apiKey) {

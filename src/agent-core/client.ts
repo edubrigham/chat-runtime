@@ -13,7 +13,7 @@ import type {
   KnowledgeResult,
   LlmCredentials,
   ToolExecuteResult,
-} from './types'
+} from './types.js'
 
 export interface VpsClientOptions {
   /** VPS base URL, e.g. https://app.example.com (no trailing slash needed). */

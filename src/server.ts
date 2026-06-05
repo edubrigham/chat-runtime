@@ -8,8 +8,8 @@
  *
  * Local/Node dev keeps using `src/index.ts` (`@hono/node-server`); serverless uses this file.
  */
-import { createAppFromEnv } from './app'
-import { loadEnv } from './config'
+import { createAppFromEnv } from './app.js'
+import { loadEnv } from './config.js'
 
 // Constructed once at module load → warm-reused across requests on Fluid Compute.
 // loadEnv() throws a clear, logged message if VPS_BASE_URL / RUNTIME_CONFIG_SECRET are missing,

@@ -6,7 +6,7 @@
  */
 
 import { tool, jsonSchema, type ToolSet } from 'ai'
-import type { RuntimeToolDef, VpsClient } from './agent-core'
+import type { RuntimeToolDef, VpsClient } from './agent-core/index.js'
 
 export function buildTools(deploymentId: string, defs: RuntimeToolDef[], vps: VpsClient): ToolSet {
   const entries = defs.map((def) => {
