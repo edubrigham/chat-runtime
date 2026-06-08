@@ -176,9 +176,28 @@ export function createApp(deps: AppDeps): Hono {
       },
     })
 
-    // CORS (public path only) is attached to the streamed Response via ResponseInit so the
-    // browser can read the body cross-origin. The internal path passes no headers (undefined).
-    return result.toTextStreamResponse(cors ? { headers: cors } : undefined)
+    // CORS (public path only) is attached to the Response via ResponseInit so the browser can
+    // read the body cross-origin. The internal path passes no CORS headers.
+    if (session.streaming) {
+      // Stream token-by-token. `X-Accel-Buffering: no` + `no-transform` tell intermediary
+      // proxies (Railway/nginx-style) NOT to buffer the chunked body — otherwise the whole
+      // reply is held back and arrives as one block in the widget.
+      return result.toTextStreamResponse({
+        headers: {
+          ...(cors ?? {}),
+          'X-Accel-Buffering': 'no',
+          'Cache-Control': 'no-cache, no-transform',
+        },
+      })
+    }
+
+    // Non-streaming (toggle off): wait for the full reply and return it in one response.
+    // The widget reads the body the same way (a single chunk). onFinish still flushes durable.
+    const fullText = await result.text
+    return new Response(fullText, {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', ...(cors ?? {}) },
+    })
   })
 
   return app
