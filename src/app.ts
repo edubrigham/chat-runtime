@@ -179,12 +179,16 @@ export function createApp(deps: AppDeps): Hono {
     // CORS (public path only) is attached to the Response via ResponseInit so the browser can
     // read the body cross-origin. The internal path passes no CORS headers.
     if (session.streaming) {
-      // Stream token-by-token. `X-Accel-Buffering: no` + `no-transform` tell intermediary
-      // proxies (Railway/nginx-style) NOT to buffer the chunked body — otherwise the whole
-      // reply is held back and arrives as one block in the widget.
+      // Stream token-by-token. The proxy in front of the runtime (Railway) gzips the
+      // response by default, and gzip BUFFERS the whole body before flushing → the reply
+      // arrives as one block in the browser (curl without Accept-Encoding streamed fine;
+      // with gzip it didn't). `Content-Encoding: none` is the AI SDK's documented fix —
+      // it tells the proxy not to compress, so chunks flush as generated. (X-Accel-
+      // Buffering + no-transform are extra hints for nginx-style proxies.)
       return result.toTextStreamResponse({
         headers: {
           ...(cors ?? {}),
+          'Content-Encoding': 'none',
           'X-Accel-Buffering': 'no',
           'Cache-Control': 'no-cache, no-transform',
         },
